@@ -1,0 +1,914 @@
+---
+title: "**Analyse comparative des dynamiques du prix du citron entre Abidjan et Bouaké**"
+author: "Jean-Baptiste **KOFFI** et Prosper **KOUASSI**"
+date: "2025-07-25"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r, echo=FALSE, fig.align='center', out.width='60%'}
+knitr::include_graphics("images/image_citron.jpg")
+```
+
+
+## **Contexte de l'étude**
+
+En Côte d’Ivoire, le citron est un produit agricole important, tant pour la consommation locale que pour l’exportation. Cependant, son prix varie considérablement selon les régions. Abidjan, en tant que principal centre économique, dispose d’un marché plus intégré aux réseaux d’import-export, tandis que Bouaké, ville stratégique du centre, pourrait être plus sensible aux fluctuations des cultures locales.
+
+Ces différences structurelles soulèvent une interrogation centrale : les dynamiques de prix observées dans ces deux villes obéissent-elles aux mêmes logiques ? Et peut-on les modéliser efficacement pour mieux les anticiper ? 
+
+Cette étude vise à offrir une vision claire des dynamiques de prix du citron sur deux marchés emblématiques du pays (Abidjan et Bouaké). Elle s’attache à :
+
+-   Observer et comparer l’évolution des prix du citron dans les villes d’Abidjan et de Bouaké sur la période de 2020 à 2022
+
+-   Utiliser des méthodes d’analyse adaptées pour représenter les dynamiques propres à chaque ville
+
+-   Apprécier la fiabilité des différentes méthodes utilisées et identifier ceux qui offrent les meilleures perspectives de prévision selon les cas
+
+
+##### **Source de données** : <https://data.gouv.ci/datasets/echo-du-marche>
+
+
+
+## **Approche méthodologique**
+
+Afin de mieux comprendre l’évolution des prix du citron à Abidjan et Bouaké, nous avons adopté une démarche structurée autour de deux grandes étapes :
+
+- **Observation et analyse descriptive** : les données seront explorées visuellement afin d’identifier les tendances générales, les variations saisonnières éventuelles et les éventuelles anomalies. Des indicateurs simples tels que la moyenne et la dispersion pourront enrichir cette analyse.
+
+- **Modélisation et prévision** : différents modèles seront explorés de manière progressive pour identifier celui qui représente le mieux l’évolution des prix observés. L’objectif est de comparer les approches et de sélectionner le modèle le plus pertinent pour produire des prévisions fiables.
+
+
+
+
+### **Observation et analyse descriptive**
+
+
+#### **Affichage graphique**
+```{r, include=FALSE}
+# chargement des librairies
+library(dplyr)
+library(forecast)
+library(tseries)
+library(ggplot2)
+library(plotly)
+library(lubridate)
+library(ggpubr)
+```
+
+```{r, include=FALSE}
+# chargement du jeu de données
+
+citron = read.csv("citron.csv", stringsAsFactors = FALSE) |>
+  mutate(DATE = as.Date(DATE),PRIX = as.numeric(PRIX))
+head(citron)
+```
+
+```{r}
+# filtrage des villes
+
+abidjan = citron|> filter(VILLE == "ABIDJAN") |> arrange(DATE)
+bouake = citron |> filter(VILLE == "BOUAKE") |> arrange(DATE)
+```
+
+```{r}
+# conversion en séries temporelles (hebdomadaire)
+
+ts_abi = ts(abidjan$PRIX, frequency=52, start=c(2020,1))
+ts_bou = ts(bouake$PRIX, frequency=52, start=c(2020,1))
+```
+
+
+```{r}
+# représentation graphique
+
+# statistiques pour Abidjan
+moy_abi = mean(ts_abi)
+min_abi = min(ts_abi)
+max_abi = max(ts_abi)
+sd_abi  = sd(ts_abi)
+
+# statistiques pour Bouaké
+moy_bou = mean(ts_bou)
+min_bou = min(ts_bou)
+max_bou = max(ts_bou)
+sd_bou  = sd(ts_bou)
+
+# graphique
+autoplot(ts_abi, series = "Abidjan") +
+  autolayer(ts_bou, series = "Bouaké") +
+  
+  # bloc statistiques Abidjan
+  annotate("text", x = time(ts_abi)[5], y = max(c(ts_abi, ts_bou)) * 0.90, 
+           label = paste("Abidjan",
+                         paste("Moyenne   :", round(moy_abi, 1)),
+                         paste("Min       :", round(min_abi, 1)),
+                         paste("Max       :", round(max_abi, 1)),
+                         paste("Écart-type:", round(sd_abi, 1)),
+                         sep = "\n"),
+           hjust = 0, color = "blue", size = 3.5) +
+  
+  # bloc statistiques Bouaké
+  annotate("text", x = time(ts_abi)[45], y = max(c(ts_abi, ts_bou)) * 0.90, 
+           label = paste("Bouaké",
+                         paste("Moyenne   :", round(moy_bou, 1)),
+                         paste("Min       :", round(min_bou, 1)),
+                         paste("Max       :", round(max_bou, 1)),
+                         paste("Écart-type:", round(sd_bou, 1)),
+                         sep = "\n"),
+           hjust = 0, color = "red", size = 3.5) +
+  
+  ggtitle("Evolution du prix du citron à Abidjan et Bouaké") +
+  ylab("Prix (FCFA/kg)") +
+  xlab("Temps") +
+  theme_minimal()
+
+```
+
+
+Les graphiques ci-dessus ont été obtenus à partir des données reccueillies. On observe que, sur la période de **2020 à 2022**, les prix du citron à Bouaké apparaissent **globalement plus stables** et plus élevés qu’à Abidjan au début du graphique, notamment en **2020** où Bouaké affiche des niveaux autour de **850 FCFA/kg** contre **600 FCFA/kg** à Abidjan. À partir de **fin 2020**, Abidjan connaît une forte instabilité avec des **fluctuations prononcées**, tandis que Bouaké subit une **chute brutale** des prix en **2021**, oscillant ensuite entre **400 et 600 FCFA/kg**. Un pic spectaculaire est enregistré à Abidjan **fin 2021**, atteignant environ **1300 FCFA/kg**.
+
+
+#### **Saisonnalité des prix à Abidjan et Bouaké**
+
+```{r}
+ggseasonplot(ts_abi, year.labels = TRUE, year.labels.left = TRUE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Saisonnalité des prix à Abidjan")
+
+
+
+ggseasonplot(ts_bou, year.labels = TRUE, year.labels.left = TRUE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Saisonnalité des prix à Bouaké")
+
+```
+
+
+
+Les graphiques de saisonnalité des prix du citron révèlent des comportements distincts selon les années, ils ne montrent pas de saisonnalité évidente. Il ne faut toutefois pas exclure qu'il pourrait y avoir des effets saisonniers masqués ou instables. Voyons cela avec des outils comme l'*ACF* et le *PACF*.
+
+
+####  **ACF et PACF**
+
+```{r, warning=FALSE}
+library(ggpubr)
+acf1 = ggAcf(ts_abi, lag.max = 90, main = "ACF - Abidjan")
+pacf1 = ggPacf(ts_abi, lag.max = 90, main = "PACF - Abidjan")
+ggarrange(acf1, pacf1)
+
+acf2 = ggAcf(ts_bou, lag.max = 90, main = "ACF - Bouaké")
+pacf2 = ggPacf(ts_bou, lag.max = 90, main = "PACF - Bouaké")
+ggarrange(acf2,pacf2)
+
+```
+
+
+Au vu des graphiques, il n'y a à priori pas de saisonnalité.
+
+
+
+### **Modélisation et prévision**
+
+
+#### **Modèles de décomposition des séries temporelles**
+
+Pour mieux comprendre la structure interne des séries temporelles du prix du citron, nous procédons à leur décomposition. Cette démarche permet d’isoler trois composantes essentielles : **la tendance** (évolution à long terme), **la saisonnalité** (motifs périodiques) et **les résidus** (variations aléatoires). Nous appliquons successivement une décomposition additive, multiplicative, puis la méthode STL (Seasonal and Trend decomposition using Loess). Toutefois, vu qu'il n'y a pas assez d'observations dans les données pour détecter une saisonnalité fiable avec ces méthodes, nous ne nous attarderons pas sur la saisonnalité. 
+
+##### **Décomposition additive et multiplicative**
+
+Le modèle de **décomposition additive** s'écrit : 
+$$Y_t = T_t + S_t + \varepsilon_t$$
+où :
+
+- $Y_t$ désigne l’observation d’une grandeur $Y$ à l’instant (ou à la date) t
+- $T_t$ représente la composante tendancielle
+- $S_t$ représente la composante saisonnière
+- $\varepsilon_t$ représente la composante résiduelle
+
+
+Le modèle de **décomposition multiplicative** s'écrit : 
+$$Y_t = T_t \times S_t \times \varepsilon_t$$
+où :
+
+- $Y_t$ désigne l’observation d’une grandeur $Y$ à l’instant (ou à la date) t
+- $T_t$ représente la composante tendancielle
+- $S_t$ représente la composante saisonnière
+- $\varepsilon_t$ représente la composante résiduelle
+
+
+##### **Application aux données**
+
+
+Après application, on obtient les graphiques suivants :
+
+
+```{r, warning=FALSE}
+decomp_abi_add = decompose(ts_abi, type = "additive")
+decomp_bou_add = decompose(ts_bou, type = "additive")
+
+# représentation
+
+library(gridExtra)
+grid.arrange(
+  autoplot(decomp_abi_add) + ggtitle("Abidjan"),
+  autoplot(decomp_bou_add) + ggtitle("Bouaké"),
+  ncol = 2,
+  top = "Décompositions additives"
+)
+
+```
+
+
+```{r}
+decomp_abi_mult <- decompose(ts_abi, type = "multiplicative")
+decomp_bou_mult <- decompose(ts_bou, type = "multiplicative")
+
+# représentation
+
+library(gridExtra)
+grid.arrange(
+  autoplot(decomp_abi_mult) + ggtitle("Abidjan"),
+  autoplot(decomp_bou_mult) + ggtitle("Bouaké"),
+  ncol = 2,
+  top = "Décompositions multiplicatives"
+)
+```
+
+
+On observe des **dynamiques contrastées** entre les marchés du citron d'Abidjan et Bouaké. À Abidjan, on observe une forte volatilité avec une tendance marquée par un **effondrement des prix en 2020** suivi d'un **rebond vigoureux en 2021**, et des **résidus importants**. À l'inverse, Bouaké présente une évolution **plus stable** avec une **tendance culminant** en **2021** et des **résidus plus contenus**.
+
+
+
+##### **Décomposition STL**
+
+La méthode STL (Seasonal-Trend decomposition using Loess) se distingue des décompositions additive et multiplicative par sa plus grande flexibilité. Contrairement à ces dernières, qui supposent une relation fixe entre tendance, saisonnalité et résidus, STL utilise un lissage local (Loess) pour extraire chaque composante de manière souple. Cela lui permet de mieux gérer les données irrégulières, les tendances non linéaires et les saisonnalités qui évoluent dans le temps.
+
+```{r}
+library(forecast)
+
+decomp_abi_stl = stl(ts_abi, s.window="periodic")
+
+decomp_bou_stl = stl(ts_bou, s.window="periodic")
+
+# représentation
+
+
+library(gridExtra)
+grid.arrange(
+  autoplot(decomp_abi_stl) + ggtitle("Abidjan"),
+  autoplot(decomp_bou_stl) + ggtitle("Bouaké"),
+  ncol = 2,
+  top = "Décompositions STL"
+)
+
+```
+
+
+La décomposition STL révèle des **comportements contrastés** entre Abidjan et Bouaké. À Abidjan, la série est marquée par une **forte instabilité** avec plusieurs **oscillations de prix**. En revanche, Bouaké, certes avec une **tendance changeante**, présente une **structure plus stable**, avec des résidus modérés.
+
+
+#### **Sélection de la meilleure décomposition**
+
+Pour choisir la méthode de décomposition la plus adaptée, un **examen des résidus** et le calcul de l’erreur **RMSE** (Root Mean Squared Error, ou racine de l’erreur quadratique moyenne) nous seront utiles.
+
+
+- **Examen des résidus**
+```{r}
+#Abidjan
+resid_abi_add = na.omit(decomp_abi_add$random)
+resid_abi_mult = na.omit(decomp_abi_mult$random)
+resid_abi_stl = na.omit(decomp_abi_stl$time.series[, "remainder"])
+
+
+#Bouaké
+resid_bou_add = na.omit(decomp_bou_add$random)
+resid_bou_mult = na.omit(decomp_bou_mult$random)
+resid_bou_stl = na.omit(decomp_bou_stl$time.series[, "remainder"])
+```
+
+
+Les graphiques des résidus sont représentés ci-dessous : 
+
+```{r}
+# configuration de la zone graphique (2 lignes x 3 colonnes)
+par(mfrow = c(2, 3), mar = c(4, 4, 3, 1) + 0.1)
+
+# Première ligne : Abidjan
+hist(resid_abi_add, main = "Additif - Abidjan", xlab = "Résidus", col = "grey")
+hist(resid_abi_mult, main = "Multiplicatif - Abidjan", xlab = "Résidus", col = "grey")
+hist(resid_abi_stl, main = "STL - Abidjan", xlab = "Résidus", col = "grey")
+
+# Deuxième ligne : Bouaké
+hist(resid_bou_add, main = "Additif - Bouaké", xlab = "Résidus", col = "grey")
+hist(resid_bou_mult, main = "Multiplicatif - Bouaké", xlab = "Résidus", col = "grey")
+hist(resid_bou_stl, main = "STL - Bouaké", xlab = "Résidus", col = "grey")
+```
+
+
+Sur le graphique, les résidus issus des méthodes additive et multiplicative sont fortement concentrés autour d’une valeur centrale avec peu de dispersion. En revanche, ceux de la méthode STL présentent une distribution plus étalée et symétrique autour de zéro.
+
+
+- **Calcul des erreurs RMSE**
+
+L'écriture mathématique de l'erreur RMSE est : $$RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^n \left(y_i - \hat{y}_i \right)^2}$$
+
+où : 
+
+- $n =$ nombre total d'observations
+- $y_i =$ valeur observée
+- $\hat{y}_i =$ valeur prédite par le modèle
+- $y_i - \hat{y}_i =$ erreur de prédiction pour l’observation $i$
+
+
+Après application les résultats sont présentés dans le tableau ci-dessous :
+
+```{r}
+# fonctions pour calculer le RMSE
+rmse = function(x) sqrt(mean(x^2, na.rm = TRUE))
+
+# calcul des métriques pour Abidjan
+metrics_abi = data.frame(
+  Ville = "Abidjan",
+  Modèle = c("Additif", "Multiplicatif", "STL"),
+  RMSE = c(
+    round(rmse(resid_abi_add), 1),
+    round(rmse(resid_abi_mult), 1),
+    round(rmse(resid_abi_stl), 1)
+  )
+  )
+
+# calcul des métriques pour Bouaké
+
+metrics_bou = data.frame(
+  Ville = "Bouaké",
+  Modèle = c("Additif", "Multiplicatif", "STL"),
+  RMSE = c(
+    round(rmse(resid_bou_add), 1),
+    round(rmse(resid_bou_mult), 1),
+    round(rmse(resid_bou_stl), 1)
+  )
+  )
+
+library(DT)
+metrics_combined = rbind(metrics_abi, metrics_bou)
+
+# trouver les 2 meilleurs RMSE
+top_rmse <- sort(metrics_combined$RMSE)[1:2]
+
+# appliquer le style conditionnel
+datatable(metrics_combined) %>%
+  formatStyle(
+    'RMSE',
+    backgroundColor = styleEqual(
+      top_rmse, 
+      rep("#4CAF50", length(top_rmse))
+  ))
+```
+
+Les résultats montrent que, pour Abidjan comme pour Bouaké, le **modèle multiplicatif** affiche les plus faibles RMSE, traduisant un meilleur ajustement aux données que les modèles additif et STL.
+
+
+
+
+### **Modèle ARIMA**
+
+Le modèle ARIMA est donné par :
+
+$$\phi(L)(1 - L)^d X_t = \theta(L)\varepsilon_t$$
+
+Avec : 
+
+- $\phi(L) = 1 - \phi_1 L - \cdots - \phi_p L^p$ 
+- $\theta(L) = 1 + \theta_1 L + \cdots + \theta_q L^q$ 
+- $\varepsilon_t$ : bruit blanc
+
+### **Estimation des paramètres ARIMA $(p,d,q)$**
+
+#### **Estimation de $d$**
+
+- **Test de stationnarité**
+
+##### Test ADF (Augmented Dickey-Fuller)
+
+- **Ce qu’il vérifie** : Est-ce que la série change au fil du temps sans revenir à un niveau stable ?
+- **Hypothèse de départ ($H_0$)** : La série n’est pas stable.
+- **Conclusion** :
+  - Si le test rejette $H_0$, alors la série est probablement stable dans le temps
+  - Si le test ne rejette pas $H_0$, la série est instable (non stationnaire).
+
+On espère rejeter $H_0$ ici, car ça voudrait dire que la série est stationnaire.
+
+
+##### Test KPSS (Kwiatkowski-Phillips-Schmidt-Shin)
+
+- **Ce qu’il vérifie** : Est-ce que la série est déjà stable autour d’un niveau fixe ?
+- **Hypothèse de départ ($H_0$)** : La série est stable.
+- **Conclusion** :
+  - Si le test rejette $H_0$, la série est probablement instable.
+  - Si le test ne rejette pas $H_0$, la série est stable.
+
+Ici, on espère ne pas rejeter $H_0$, ce serait une preuve que la série est stationnaire.
+
+
+```{r, include=FALSE}
+# test de stationnarité
+  # ADF et KPSS
+
+adf.test(ts_abi)
+adf.test(ts_bou)
+
+kpss.test(ts_abi)
+kpss.test(ts_bou)
+
+# les résultats des tests sont contradictoires, la stationnarité est incertaine.
+# Pour être rigoureux, appliquons une différenciation avant de modéliser
+```
+
+```{r}
+# différenciation
+
+ts_abi_diff = diff(ts_abi)
+ts_bou_diff = diff(ts_bou)
+```
+
+```{r, include=FALSE}
+# on reprend les tests après différenciation
+
+adf.test(ts_abi_diff)
+adf.test(ts_bou_diff)
+
+kpss.test(ts_abi_diff)
+kpss.test(ts_bou_diff)
+```
+
+Les résultats des tests ont suggéré une stationnarité incertaine. Une différenciation a donc été appliquée aux séries. Les résultats des tests faits après la différenciation ont confirmé la stationnarité des séries.
+
+
+**Conclusion :** Les deux séries différenciées sont stationnaires (prêtes pour ARIMA/SARIMA) avec $D = d = 1$.
+
+
+#### **Estimation de $p$ et $q$**
+
+- **ACF et PACF**
+
+```{r, warning=FALSE}
+library(ggpubr)
+acf1 = ggAcf(ts_abi_diff, lag.max = 104, main = "ACF - Abidjan pour q")
+pacf1 = ggPacf(ts_abi_diff, lag.max = 104, main = "PACF - Abidjan pour p")
+ggarrange(acf1, pacf1)
+
+acf2 = ggAcf(ts_bou_diff, lag.max = 104, main = "ACF - Bouaké pour q")
+pacf2 = ggPacf(ts_bou_diff, lag.max = 104, main = "PACF - Bouaké pour p")
+ggarrange(acf2,pacf2)
+
+```
+
+Vu que nous n'avons pas de saisonnalité, nous allons faire un **auto.arima** qui va nous donner les valeurs de $p$ et $q$.
+
+Pour l'applications, nous séparons les données en données d'apprentissage et de test.
+
+La série d'Abidjan qui compte **110 semaines** a été repartie comme suit :
+
+- **88 semaines** (soit du 06/01/2020 au 04/04/2022) pour l'**apprentissage**
+- **22 semaines** (soit du 11/04/2022 au 03/10/2022) pour le **test**
+
+La série de Bouaké qui compte **108 semaines** a été repartie comme suit :
+
+- **86 semaines** (soit du 06/01/2020 au 16/05/2022) pour l'**apprentissage**
+- **22 semaines** (soit du 23/05/2022 au 31/10/2022) pour le **test**
+
+```{r}
+## séparation des données en données d'apprentissage et de test
+
+# fonction générique pour séparer une série temporelle
+split_ts = function(ts_data, train_ratio = 0.8) {
+  split_point = floor(length(ts_data) * train_ratio)
+  train = window(ts_data, end = time(ts_data)[split_point])
+  test = window(ts_data, start = time(ts_data)[split_point + 1])
+  return(list(train = train, test = test))
+}
+
+# application à Abidjan
+ts_abi_split = split_ts(ts_abi)
+train_abi = ts_abi_split$train
+test_abi = ts_abi_split$test
+
+# application à Bouaké
+ts_bou_split = split_ts(ts_bou)
+train_bou = ts_bou_split$train
+test_bou = ts_bou_split$test
+
+# vérification
+#cat("Abidjan - Train:", length(train_abi), "semaines | Test:", length(test_abi), "semaines\n")
+#cat("Bouaké - Train:", length(train_bou), "semaines | Test:", length(test_bou), "semaines")
+```
+
+### **Modèle Auto ARIMA**
+
+- **Pour Abidjan**
+
+```{r}
+auto_arima_abi = auto.arima(train_abi, 
+                     
+           max.p = 5,        # AR non saisonnier
+           max.q = 5,        # MA non saisonnier
+           max.P = 2,        # AR saisonnier
+           max.Q = 2,        # MA saisonnier
+           stepwise = TRUE)
+auto_arima_abi
+
+```
+
+
+- **Pour Bouaké**
+
+
+```{r}
+library(forecast)
+auto_arima_bou = auto.arima(train_bou,          
+           max.p = 5,        # AR non saisonnier
+           max.q = 5,        # MA non saisonnier
+           max.P = 2,        # AR saisonnier
+           max.Q = 2,        # MA saisonnier
+           stepwise = TRUE)  
+auto_arima_bou
+```
+
+On construit un modèle $ARIMA(1,1,1)$ pour Abidjan et Bouaké et on le compare au modèle $Auto ARIMA$ par le critère $AIC$. Notons que l'$AIC$ a pour formule mathématique : $$AIC = 2k - 2\ln(\hat{L})$$
+
+où :
+
+- $k =$ nombre de paramètres estimés du modèle
+- $\hat{L} =$ valeur de la vraisemblance maximale du modèle
+
+### **ARIMA simple**
+
+- **Pour Abidjan**
+
+```{r}
+arima_abi = Arima(train_bou, order=c(1,1,1))
+arima_abi
+```
+
+
+- **Pour Bouaké**
+
+```{r}
+arima_bou = Arima(train_abi, order=c(1,1,1))
+arima_bou
+```
+
+Le résultat des comparaisons est consigné dans le tableau suivant : 
+
+```{r}
+library(DT)
+
+# données AIC
+aic_data = data.frame(
+  Ville = c("Bouaké", "Abidjan"),
+  ARIMA = round(c(AIC(arima_bou), AIC(arima_abi)), 1),
+  Auto_ARIMA = round(c(AIC(auto_arima_bou), AIC(auto_arima_abi)), 1)
+)
+
+# trouver la meilleure (plus petite) valeur par ligne
+best_indices <- apply(aic_data[ , 2:3], 1, which.min)
+
+# création du tableau avec surlignage
+datatable(aic_data, options = list(dom = 't')) %>%
+  formatStyle(
+    columns = c("ARIMA", "Auto_ARIMA"),
+    backgroundColor = styleEqual(
+      levels = unlist(lapply(seq_along(best_indices), function(i) {
+        rep(i, 2) # On donne un groupe par ligne
+      })),
+      values = rep("white", nrow(aic_data) * 2) # Valeur par défaut blanche
+    )
+  ) %>%
+  formatStyle(
+    columns = "ARIMA",
+    backgroundColor = styleEqual(aic_data$ARIMA[best_indices == 1], "#4CAF50")
+  ) %>%
+  formatStyle(
+    columns = "Auto_ARIMA",
+    backgroundColor = styleEqual(aic_data$Auto_ARIMA[best_indices == 2], "#4CAF50")
+  )
+
+```
+
+Pour les ajustements des modèles, nous remarquons que :
+
+- pour Abidjan, c'est le **ARIMA simple** qui l'emporte
+- pour Bouaké, c'est l'**Auto ARIMA** qui l'emporte
+
+
+
+### **Modèle SARIMA**
+
+Même si la saisonnalité n’apparaît pas clairement dans les données, nous avons choisi de forcer un SARIMA afin d’intégrer une composante saisonnière hypothétique. Nous avons retenu une période **s=4** au lieu de **s=52** car l’estimation avec **s=52** a généré une erreur numérique liée au manque de données pour couvrir un cycle complet annuel. Ce choix permet néanmoins de tester l’existence d’un effet périodique latent plus court et d’évaluer son impact sur les prévisions, tout en comparant la performance avec un modèle sans saisonnalité
+
+```{r}
+# modèle SARIMA pour Abidjan : SARIMA(1,1,1)(1,1,0)[4]
+sarima_abi = Arima(train_abi,
+                          order = c(1, 1, 1),
+                          seasonal = list(order = c(1, 1, 0), period = 4))
+
+# modèle SARIMA pour Bouaké : SARIMA(1,1,1)(0,1,0)[4]
+sarima_bou = Arima(train_bou,
+                          order = c(1, 1, 1),
+                          seasonal = list(order = c(0, 1, 0), period = 4))
+```
+
+
+Comme précédemment, nous comparons ce modèle $SARIMA$ aux deux modèles précédents par le critère $AIC$.
+
+Les résultats sont contenus dans le tableau ci-dessous : 
+
+```{r}
+library(DT)
+
+# Création du data.frame à partir de tes valeurs
+aic_data <- data.frame(
+  Ville = c("Abidjan", "Bouaké"),
+  SARIMA = round(c(AIC(sarima_abi), AIC(sarima_bou)), 1),
+  Auto_ARIMA = round(c(AIC(auto_arima_abi), AIC(auto_arima_bou)),1),
+  ARIMA = round(c(AIC(arima_abi), AIC(arima_bou)), 1)
+)
+
+# Création du tableau interactif
+datatable(aic_data, options = list(dom = 't', pageLength = 2)) %>%
+  formatStyle(
+    columns = c("SARIMA", "Auto_ARIMA", "ARIMA"),
+    backgroundColor = styleEqual(
+      # On met en vert les minimums par ligne
+      unlist(aic_data[, 2:4]),
+      ifelse(
+        unlist(aic_data[, 2:4]) %in% apply(aic_data[, 2:4], 1, min),
+        "#4CAF50",
+        "white"
+      )
+    )
+  )
+
+```
+
+
+Encore une fois, pour les ajustements des modèles, nous remarquons que :
+
+- pour Abidjan, c'est toujours le **ARIMA simple** qui l'emporte
+- pour Bouaké, c'est toujours l'**Auto ARIMA** qui l'emporte
+
+Ce qui veut dire qu'un modèle $SARIMA$ n'est pas adapté aux données en notre possession.
+
+
+### **Prévisions et Performance des modèles**
+
+#### **Perfromances**
+
+Nous mesurons la performances des modèles par les métriques $MAE$ et $RMSE$. La métrique $MAE$ a pour écriture mathématique : 
+$$MAE = \frac{1}{n} \sum_{i = 1}^n |y_i - \hat{y}_i|$$
+
+où :
+
+- $y_i =$ valeur observée
+- $\hat{y}_i =$ valeur prédite
+- $n =$ nombre de prédictions
+
+La métrique $RMSE$ a été définie plus haut.
+
+Les résultats sont présentés dans le tableau ci-dessous :
+```{r}
+library(forecast)
+library(dplyr)
+
+# fonction pour calculer les performances
+model_performance = function(train_data, test_data, models_list, ville) {
+  results = data.frame()
+  
+  for (m in names(models_list)) {
+    # Prédiction sur la taille du test
+    fc = forecast(models_list[[m]], h = length(test_data))
+    preds = fc$mean
+    
+    # calcul RMSE et MAE
+    rmse = round(sqrt(mean((test_data - preds)^2, na.rm = TRUE)), 1)
+    mae  = round(mean(abs(test_data - preds), na.rm = TRUE), 1)
+    
+    results = rbind(results, data.frame(
+      Ville = ville,
+      Modele = m,
+      RMSE = rmse,
+      MAE = mae
+    ))
+  }
+  return(results)
+}
+
+# liste des modèles par ville
+models_abi <- list(
+  Auto_ARIMA = auto_arima_abi,
+  ARIMA = arima_abi
+)
+
+models_bou = list(
+  Auto_ARIMA = auto_arima_bou,
+  ARIMA = arima_bou
+)
+
+# calcul performances
+perf_abi = model_performance(train_abi, test_abi, models_abi, "Abidjan")
+perf_bou = model_performance(train_bou, test_bou, models_bou, "Bouaké")
+
+# regrouper dans un seul tableau
+perf_all = rbind(perf_abi, perf_bou)
+
+
+library(DT)
+
+# Supposons que perf_all contient : Ville, Modèle, MAE, RMSE
+# Mise en vert automatique des meilleures valeurs (plus petit MAE et RMSE par ville)
+
+datatable(perf_all, options = list(pageLength = 4)) %>%
+  formatStyle(
+    columns = c("MAE", "RMSE"),
+    backgroundColor = styleEqual(
+      # On "déplie" les données et compare aux min par ville
+      unlist(perf_all[, c("MAE", "RMSE")]),
+      ifelse(
+        unlist(perf_all[, c("MAE", "RMSE")]) %in% unlist(
+          by(perf_all[, c("MAE", "RMSE")], perf_all$Ville, function(x) apply(x, 2, min))
+        ),
+        "#4CAF50",
+        "white"
+      )
+    )
+  )
+
+
+```
+
+Pour la ville d’**Abidjan**, les performances des deux modèles sont **très proches** : l’**Auto ARIMA** présente un **RMSE** légèrement inférieur (**487,6** contre **487,9**) tandis que l’**ARIMA** classique obtient un **MAE** plus faible (**425,2** contre **450**), ce qui signifie qu’aucun des deux ne domine nettement. En revanche, pour **Bouaké**, l’**Auto ARIMA** surpasse **largement** l’**ARIMA**, avec un **RMSE** de **64** contre **182,3** et un **MAE** de **27,3** contre **172,1**.
+
+
+##### **L'analyse des résidus pour Abidjan**
+
+```{r}
+library(forecast)
+checkresiduals(auto_arima_abi) 
+checkresiduals(arima_abi)
+```
+
+
+##### **L'analyse des résidus pour Bouaké**
+
+```{r}
+checkresiduals(auto_arima_bou)
+checkresiduals(arima_bou)
+```
+
+
+L’analyse des performances montre que le modèle pour **Bouaké** surpasse celui d’**Abidjan**. Les indicateurs d’erreur, comme la **MAE** et le **RMSE**, sont plus faibles à Bouaké. L’examen des résidus révèle également que le modèle **ARIMA** de Bouaké produit des erreurs plus **stables** et **aléatoires**, **sans autocorrélation notable**, tandis que celui d’Abidjan présente quelques **pics isolés**.
+
+
+
+#### **Prévisions**
+
+##### **Auto ARIMA**
+
+- **Pour Abidjan**
+
+```{r}
+# Prévisions sur l'ensemble de test
+forecast_auto_abi <- forecast(auto_arima_abi, h = length(test_abi))
+
+# Métriques de performance
+accuracy(forecast_auto_abi, test_abi)
+
+# graphe
+autoplot(forecast_auto_abi) + 
+  autolayer(test_abi, series = "Données Test") +
+  ggtitle("Prévisions Auto ARIMA(1,1,0) - Abidjan")
+```
+
+- **Pour Bouaké**
+
+```{r}
+# Prévisions sur l'ensemble de test
+forecast_auto_bou <- forecast(auto_arima_bou, h = length(test_bou))
+
+# Métriques de performance
+accuracy(forecast_auto_bou, test_bou)
+
+# graphe
+autoplot(forecast_auto_bou) + 
+  autolayer(test_bou, series = "Données Test") +
+  ggtitle("Prévisions ARIMA(0,1,0) - Bouaké")
+```
+
+
+##### **ARIMA**
+
+- **Pour Abidjan**
+
+```{r}
+# Prévisions sur l'ensemble de test
+forecast_arima_abi <- forecast(arima_abi, h = length(test_abi))
+
+# Métriques de performance
+accuracy(forecast_arima_abi, test_abi)
+
+# graphe
+autoplot(forecast_arima_abi) + 
+  autolayer(test_abi, series = "Données Test") +
+  ggtitle("Prévisions ARIMA(1,1,1) - Abidjan")
+```
+
+
+- **Pour Bouaké**
+
+```{r}
+# Prévisions sur l'ensemble de test
+forecast_arima_bou <- forecast(arima_bou, h = length(test_bou))
+
+# Métriques de performance
+accuracy(forecast_arima_bou, test_bou)
+
+# graphe
+autoplot(forecast_arima_bou) + 
+  autolayer(test_bou, series = "Données Test") +
+  ggtitle("Prévisions ARIMA(1,1,1) - Bouaké")
+```
+
+ce qu'on peux retenir
+
+##### **Décomposition multiplicative**
+
+
+- **Pour Abidjan**
+
+```{r}
+# Décomposition multiplicative
+decomp_abi <- decompose(ts_abi, type = "multiplicative")
+
+# Prévision de la tendance
+trend_fit <- auto.arima(na.omit(decomp_abi$trend))
+trend_forecast <- forecast(trend_fit, h = length(test_abi))
+
+# Saison : répéter le motif saisonnier
+season_pattern <- decomp_abi$seasonal
+season_length <- frequency(train_abi)
+season_future <- rep(tail(season_pattern, season_length), length.out = length(test_abi))
+
+# Prévision finale
+final_forecast_abi <- trend_forecast$mean * season_future
+
+# Comparer avec les vraies valeurs du test
+RMSE <- sqrt(mean((test_abi - final_forecast_abi)^2))
+MAE  <- mean(abs(test_abi - final_forecast_abi))
+
+data.frame(Model = "Decomposition Multiplicative",
+           RMSE = RMSE,
+           MAE = MAE)
+
+
+autoplot(final_forecast_abi) + 
+  autolayer(test_bou, series = "Données Test") +
+  ggtitle("Prévisions Décomposition Multiplicative - Abidjan")
+```
+
+
+- **Pour Bouaké**
+
+```{r}
+# Décomposition multiplicative
+decomp_bou <- decompose(ts_bou, type = "multiplicative")
+
+# Prévision de la tendance
+trend_fit <- auto.arima(na.omit(decomp_bou$trend))
+trend_forecast <- forecast(trend_fit, h = length(test_abi))
+
+# Saison : répéter le motif saisonnier
+season_pattern <- decomp_bou$seasonal
+season_length <- frequency(train_bou)
+season_future <- rep(tail(season_pattern, season_length), length.out = length(test_bou))
+
+# Prévision finale
+final_forecast_bou <- trend_forecast$mean * season_future
+
+
+
+autoplot(final_forecast_bou) + 
+  autolayer(test_bou, series = "Données Test") +
+  ggtitle("Prévisions Décomposition Multiplicative - Bouaké")
+```
+
+
+
+
+
+
